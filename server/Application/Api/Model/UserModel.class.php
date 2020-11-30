@@ -52,6 +52,8 @@ class UserModel extends BaseModel {
 
     //删除用户
     public function delete_user($uid){
+        D("TeamMember")->where("member_uid = '$uid' ")->delete();
+        D("TeamItemMember")->where("member_uid = '$uid' ")->delete();
         D("ItemMember")->where("uid = '$uid' ")->delete();
         D("UserToken")->where("uid = '$uid' ")->delete();
         D("Template")->where("uid = '$uid' ")->delete();
@@ -101,6 +103,15 @@ class UserModel extends BaseModel {
 
             return false ;
 
+    }
+
+    public function checkDbOk(){
+        $ret = $this->find() ;
+        if ($ret) {
+            return true; 
+        }else{
+            return false; 
+        }
     }
 
 }

@@ -19,16 +19,41 @@ class UserController extends BaseController {
         session('v_code',null) ;
         if ( $password != '' && $password == $confirm_password) {
 
+            if(!D("User")->checkDbOk()){
+                $this->sendError(100100,"数据库连接不上。请确保安装了php-sqlite扩展以及数据库文件Sqlite/showdoc.db.php可用");
+                return;
+            }
+
             if ( ! D("User")->isExist($username) ) {
                 $new_uid = D("User")->register($username,$password);
                 if ($new_uid) {
+
+                    $create_sample = D("Options")->get("create_sample") ;
+                    //获取后台的语言设置
+                    //这是个历史包袱。因为安装的时候语言设置没有写到API模块的配置下，所以只能读文件读取Home模快的配置文件
+                    $config = file_get_contents("./Application/Home/Conf/config.php");
+                    if ($create_sample !== '0' && strstr($config, "'zh-cn',") ) {
+                        //导入示例项目
+                        $this->_importSample($new_uid);
+                    }
+
                     //设置自动登录
                     $ret = D("User")->where("uid = '$new_uid' ")->find() ;
                     unset($ret['password']);
                     session("login_user" , $ret );
                     $token = D("UserToken")->createToken($ret['uid']);
                     cookie('cookie_token',$token,array('expire'=>60*60*24*90,'httponly'=>'httponly'));//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
-                  $this->sendResult(array()); 
+                  $this->sendResult(array(
+                    "uid" => $ret['uid'] ,
+                    "username" => $ret['username'] ,
+                    "name" => $ret['name'] ,
+                    "groupid" => $ret['groupid'] ,
+                    "avatar" => $ret['avatar'] ,
+                    "avatar_small" => $ret['avatar_small'] ,
+                    "email" => $ret['email'] ,
+                    "email_verify" => $ret['email_verify'] ,
+                    "user_token" => $token ,
+                )); 
 
                 }else{
                     $this->sendError(10101,'register fail');
@@ -44,9 +69,32 @@ class UserController extends BaseController {
             $this->sendError(10206,L('verification_code_are_incorrect'));
         }
     }
+
+    //导入示例项目
+    private function _importSample($uid){
+        $this->_importZip("../Public/SampleZip/apidoc.zip" , $uid);
+        $this->_importZip("../Public/SampleZip/databasedoc.zip" , $uid);
+        $this->_importZip("../Public/SampleZip/teamdoc.zip" , $uid);
+        $this->_importZip("../Public/SampleZip/spreadsheet.zip" , $uid);
+    }
+
+    private function _importZip($file , $uid){
+        $zipArc = new \ZipArchive();
+        $ret = $zipArc->open($file, \ZipArchive::CREATE);
+        $info = $zipArc->getFromName("prefix_info.json") ;
+        if ($info) {
+            $info_array = json_decode($info ,1 );
+            if ($info_array) {
+                D("Item")->import( json_encode($info_array) , $uid );
+                return true;
+            }
+        }
+        return false ;
+    }
+
     //登录
     public function login(){
-        $username = I("username");
+        $username = trim(I("username"));
         $password = I("password");
         $v_code = I("v_code");
         if (!$password) {
@@ -62,18 +110,42 @@ class UserController extends BaseController {
             }
         }
         session('v_code',null) ;
+
+        if(!D("User")->checkDbOk()){
+            $this->sendError(100100,"数据库连接不上。请确保安装了php-sqlite扩展以及数据库文件Sqlite/showdoc.db.php可用");
+            return;
+        }
+
         $ret = D("User")->checkLogin($username,$password);
         //如果失败则尝试ldap登录
         if (!$ret) {
             $ret = D("User")->checkLdapLogin($username,$password);
         }
         if ($ret) {
+            //获取后台的语言设置
+            //这是个历史包袱。因为安装的时候语言设置没有写到API模块的配置下，所以只能读文件读取Home模快的配置文件
+            $config = file_get_contents("./Application/Home/Conf/config.php");
+
+            if (D("Item")->count() < 1 && strstr($config, "'zh-cn',") ) {
+                //如果项目表是空的，则生成系统示例项目
+                $this->_importSample(1);
+            }
           unset($ret['password']);
           session("login_user" , $ret );
           D("User")->setLastTime($ret['uid']);
           $token = D("UserToken")->createToken($ret['uid'],60*60*24*180);
           cookie('cookie_token',$token,array('expire'=>60*60*24*180,'httponly'=>'httponly'));//此处由服务端控制token是否过期，所以cookies过期时间设置多久都无所谓
-          $this->sendResult(array());               
+          $this->sendResult(array(
+            "uid" => $ret['uid'] ,
+            "username" => $ret['username'] ,
+            "name" => $ret['name'] ,
+            "groupid" => $ret['groupid'] ,
+            "avatar" => $ret['avatar'] ,
+            "avatar_small" => $ret['avatar_small'] ,
+            "email" => $ret['email'] ,
+            "email_verify" => $ret['email_verify'] ,
+            "user_token" => $token ,
+        ));              
         }else{
             D("VerifyCode")->_ins_times($key);//输错密码则设置输错次数
             
@@ -106,6 +178,16 @@ class UserController extends BaseController {
         }
         
         if ($ret) {
+            
+            //获取后台的语言设置
+            //这是个历史包袱。因为安装的时候语言设置没有写到API模块的配置下，所以只能读文件读取Home模快的配置文件
+            $config = file_get_contents("./Application/Home/Conf/config.php");
+
+            if (D("Item")->count() < 1 && strstr($config, "'zh-cn',") ) {
+                //如果项目表是空的，则生成系统示例项目
+                $this->_importSample(1);
+            }
+
           unset($ret['password']);
           session("login_user" , $ret );
           D("User")->setLastTime($ret['uid']);
@@ -150,6 +232,16 @@ class UserController extends BaseController {
             if ( ! D("User")->isExist($username) ) {
                 $new_uid = D("User")->register($username,$password);
                 if ($new_uid) {
+
+                    $create_sample = D("Options")->get("create_sample") ;
+                    //获取后台的语言设置
+                    //这是个历史包袱。因为安装的时候语言设置没有写到API模块的配置下，所以只能读文件读取Home模快的配置文件
+                    $config = file_get_contents("./Application/Home/Conf/config.php");
+                    if ($create_sample !== '0' && strstr($config, "'zh-cn',") ) {
+                        //导入示例项目
+                        $this->_importSample($new_uid);
+                    }
+
                     //设置自动登录
                     $ret = D("User")->where("uid = '$new_uid' ")->find() ;
                     unset($ret['password']);
@@ -196,8 +288,8 @@ class UserController extends BaseController {
         $uid = $login_user['uid'] ;
         $username = I("username");
         $field = "username as value" ;
-        $username = \SQLite3::escapeString($username) ;
         if ($username) {
+            $username = \SQLite3::escapeString($username) ;
             $where = " username like '%{$username}%'" ;
         }else{
             $where = ' 1 = 1 ';
